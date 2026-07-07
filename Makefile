@@ -141,7 +141,7 @@ OBJS := \
     $(SAMPLE_OBJS)
 
 # ─────────────────────────────────────────────────────────────────────────────
-.PHONY: all iso run run-spice install efi-register clean
+.PHONY: all iso run run-spice install efi-register clean vhdx run-vhdx
 
 all: iso
 
@@ -338,6 +338,43 @@ iso: $(KERNEL_ELF)
 	$(LIMINE_DIR)/limine bios-install $(ISO)
 	@echo "ISO ready: $(ISO)"
 
+# ── VHDX for Hyper-V (Gen 2 / UEFI) ───────────────────────────────────────────
+# Hyper-V Gen 2 firmware won't boot a hybrid CD ISO and PXE-falls-through, so we
+# build a real GPT disk with a FAT32 EFI System Partition and wrap it as VHDX.
+# Boot: New Gen 2 VM, disable Secure Boot, attach diamond.vhdx as the hard disk.
+VHDX     := diamond.vhdx
+ESP_MB   := 96
+ESP_IMG  := $(BUILD)/esp.img
+DISK_IMG := $(BUILD)/disk.raw
+vhdx: $(KERNEL_ELF)
+	@command -v mformat >/dev/null && command -v sgdisk >/dev/null && command -v qemu-img >/dev/null \
+	    || { echo "need mtools, dosfstools, gdisk, qemu-utils: sudo apt-get install -y mtools dosfstools gdisk qemu-utils"; exit 1; }
+	rm -f $(ESP_IMG) $(DISK_IMG) $(VHDX)
+	mformat -i $(ESP_IMG) -C -T $$(($(ESP_MB)*2048)) -F -v DIAMOND ::
+	mmd   -i $(ESP_IMG) ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine
+	mcopy -i $(ESP_IMG) $(LIMINE_DIR)/BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
+	mcopy -i $(ESP_IMG) $(KERNEL_ELF)             ::/kernel.elf
+	mcopy -i $(ESP_IMG) boot/limine.conf          ::/boot/limine/limine.conf
+	mcopy -i $(ESP_IMG) boot/limine.conf          ::/EFI/BOOT/limine.conf
+	mcopy -i $(ESP_IMG) boot/limine.conf          ::/limine.conf
+	@if [ -f "$(IWL_FW_BIN)" ]; then mcopy -i $(ESP_IMG) "$(IWL_FW_BIN)" ::/iwlwifi.ucode; echo "  bundled $(IWL_FW_BIN)"; fi
+	dd if=/dev/zero of=$(DISK_IMG) bs=1M count=$$(($(ESP_MB)+2)) status=none
+	sgdisk -a 2048 -n 1:2048:+$(ESP_MB)M -t 1:EF00 -c 1:"EFI System" $(DISK_IMG) >/dev/null
+	dd if=$(ESP_IMG) of=$(DISK_IMG) bs=512 seek=2048 conv=notrunc status=none
+	qemu-img convert -f raw -O vhdx -o subformat=dynamic $(DISK_IMG) $(VHDX)
+	@echo "VHDX ready: $(VHDX)  — attach to a Gen 2 VM with Secure Boot OFF"
+
+# Smoke-test the VHDX in QEMU over OVMF (same UEFI-from-disk path Hyper-V uses)
+run-vhdx: vhdx
+	$(QEMU) -machine q35 -bios $(OVMF) -m 512M -smp 4 \
+	    -drive file=$(VHDX),format=vhdx,if=none,id=disk0 \
+	    -device nvme,drive=disk0,serial=diamond \
+	    -device bochs-display,xres=1920,yres=1080,vgamem=16777216 \
+	    -display gtk,zoom-to-fit=on -serial stdio \
+	    -netdev user,id=net0 -device e1000,netdev=net0 \
+	    -audiodev $(AUDIODEV),id=audio0 -device intel-hda -device hda-duplex,audiodev=audio0 \
+	    $(KVM_FLAGS)
+
 # ── Run in QEMU ───────────────────────────────────────────────────────────────
 QEMU   := qemu-system-x86_64
 OVMF   := /usr/share/ovmf/OVMF.fd
@@ -453,7 +490,7 @@ efi-register:
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 clean:
-	rm -rf $(BUILD) $(ISO)
+	rm -rf $(BUILD) $(ISO) $(VHDX)
 
 $(BUILD):
 	mkdir -p $(BUILD)
