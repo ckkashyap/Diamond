@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "../arch/x86/io.h"
 #include "keyboard.h"
+#include "input.h"
 #include "scancode.h"
 #include "virtio_input.h"
 #include "sam/sam.h"
@@ -20,19 +21,8 @@ static int s_shift = 0;
 static int s_caps  = 0;
 static int s_space_ps2 = 0;   /* 1 while space bar is physically held (PS/2) */
 
-int kb_getchar(void) {
-    /* Try SAM keyboard first (Surface Laptop 3 built-in keyboard). */
-    int sam = sam_getchar();
-    if (sam >= 0) return sam;
-
-    /* Try VirtIO keyboard (USB-class input via virtio-keyboard-pci). */
-    int vc = virtio_input_key_poll();
-    if (vc >= 0) return vc;
-
-    /* Try Hyper-V synthetic keyboard (Gen 2 VMs: no PS/2, no USB). */
-    int hv = hv_kbd_getchar();
-    if (hv >= 0) return hv;
-
+/* PS/2 i8042 keyboard: one non-blocking poll → ASCII byte or -1. */
+static int ps2_kbd_poll(void) {
     uint8_t st = inb(KB_STATUS);
     if (!(st & 0x01u)) return -1;              /* output buffer empty */
     if (st & 0x20u) { (void)inb(KB_DATA); return -1; }  /* mouse byte — discard */
@@ -58,6 +48,29 @@ int kb_getchar(void) {
 
     char c = scancode1_to_ascii(sc, s_shift, s_caps);
     return c ? (int)(unsigned char)c : -1;
+}
+
+/*
+ * Keyboard input sources, polled in priority order by kb_getchar().  Unlike
+ * the audio/video/net driver tables (which keep one active driver), every
+ * source here coexists and is polled each call — see input.h.  Order: SAM
+ * (Surface built-in) → VirtIO (USB-class) → Hyper-V synthetic (Gen 2 VMs:
+ * no PS/2, no USB) → i8042 PS/2 port.  Each device is initialised separately
+ * in kmain(); adding a keyboard source is now a one-line table entry.
+ */
+static const struct input_source s_kbd_sources[] = {
+    { "sam",    sam_getchar           },
+    { "virtio", virtio_input_key_poll },
+    { "hyperv", hv_kbd_getchar        },
+    { "ps2",    ps2_kbd_poll          },
+};
+
+int kb_getchar(void) {
+    for (unsigned i = 0; i < sizeof(s_kbd_sources) / sizeof(s_kbd_sources[0]); i++) {
+        int c = s_kbd_sources[i].poll_char();
+        if (c >= 0) return c;
+    }
+    return -1;
 }
 
 int kb_space_held(void) {
