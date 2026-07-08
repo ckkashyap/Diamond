@@ -10,6 +10,7 @@
 #include "keyboard.h"
 #include "virtio_input.h"
 #include "sam/sam.h"
+#include "hyperv/hyperv.h"
 
 #define KB_DATA   0x60
 #define KB_STATUS 0x64
@@ -50,6 +51,10 @@ int kb_getchar(void) {
     /* Try VirtIO keyboard (USB-class input via virtio-keyboard-pci). */
     int vc = virtio_input_key_poll();
     if (vc >= 0) return vc;
+
+    /* Try Hyper-V synthetic keyboard (Gen 2 VMs: no PS/2, no USB). */
+    int hv = hv_kbd_getchar();
+    if (hv >= 0) return hv;
 
     uint8_t st = inb(KB_STATUS);
     if (!(st & 0x01u)) return -1;              /* output buffer empty */
