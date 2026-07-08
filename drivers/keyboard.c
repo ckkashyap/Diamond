@@ -8,36 +8,13 @@
 #include <stdint.h>
 #include "../arch/x86/io.h"
 #include "keyboard.h"
+#include "scancode.h"
 #include "virtio_input.h"
 #include "sam/sam.h"
 #include "hyperv/hyperv.h"
 
 #define KB_DATA   0x60
 #define KB_STATUS 0x64
-
-/* Unshifted scancode → ASCII (0 = no printable mapping) */
-static const char sc_lower[128] = {
-/*00*/ 0,  27, '1','2','3','4','5','6','7','8','9','0','-','=',  8, '\t',
-/*10*/'q','w','e','r','t','y','u','i','o','p','[',']','\n',  0, 'a', 's',
-/*20*/'d','f','g','h','j','k','l',';','\'','`',  0,'\\','z','x', 'c', 'v',
-/*30*/'b','n','m',',','.','/',  0, '*',  0, ' ',  0,   0,   0,   0,   0,  0,
-/*40*/ 0,  0,  0,  0,  0,  0,  0, '7','8','9','-','4','5','6','+','1',
-/*50*/'2','3','0','.', 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*60*/ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*70*/ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-};
-
-/* Shifted scancode → ASCII */
-static const char sc_upper[128] = {
-/*00*/ 0,  27, '!','@','#','$','%','^','&','*','(',')','_','+',  8, '\t',
-/*10*/'Q','W','E','R','T','Y','U','I','O','P','{','}','\n',  0, 'A', 'S',
-/*20*/'D','F','G','H','J','K','L',':','"', '~',  0, '|','Z','X', 'C', 'V',
-/*30*/'B','N','M','<','>','?',  0, '*',  0, ' ',  0,   0,   0,   0,   0,  0,
-/*40*/ 0,  0,  0,  0,  0,  0,  0, '7','8','9','-','4','5','6','+','1',
-/*50*/'2','3','0','.', 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*60*/ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*70*/ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-};
 
 static int s_shift = 0;
 static int s_caps  = 0;
@@ -79,12 +56,7 @@ int kb_getchar(void) {
     /* Track space press */
     if (sc == 0x39) s_space_ps2 = 1;
 
-    /* For letter keys, Caps Lock inverts the shift state */
-    char base = sc_lower[sc];
-    int use_shift = s_shift;
-    if (base >= 'a' && base <= 'z') use_shift = s_shift ^ s_caps;
-
-    char c = use_shift ? sc_upper[sc] : sc_lower[sc];
+    char c = scancode1_to_ascii(sc, s_shift, s_caps);
     return c ? (int)(unsigned char)c : -1;
 }
 

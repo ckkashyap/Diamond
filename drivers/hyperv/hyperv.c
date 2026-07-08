@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include "hyperv.h"
+#include "../scancode.h"
 #include "../serial.h"
 #include "../terminal.h"
 
@@ -571,27 +572,7 @@ static int hv_kbd_handshake(void) {
     return 0;   /* proceed; getchar() will also handle a late response */
 }
 
-/* ── Scancode set 1 → ASCII (local copy; matches drivers/keyboard.c) ──────── */
-static const char sc_lower[128] = {
-/*00*/ 0,  27, '1','2','3','4','5','6','7','8','9','0','-','=',  8, '\t',
-/*10*/'q','w','e','r','t','y','u','i','o','p','[',']','\n',  0, 'a', 's',
-/*20*/'d','f','g','h','j','k','l',';','\'','`',  0,'\\','z','x', 'c', 'v',
-/*30*/'b','n','m',',','.','/',  0, '*',  0, ' ',  0,   0,   0,   0,   0,  0,
-/*40*/ 0,  0,  0,  0,  0,  0,  0, '7','8','9','-','4','5','6','+','1',
-/*50*/'2','3','0','.', 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*60*/ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*70*/ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-};
-static const char sc_upper[128] = {
-/*00*/ 0,  27, '!','@','#','$','%','^','&','*','(',')','_','+',  8, '\t',
-/*10*/'Q','W','E','R','T','Y','U','I','O','P','{','}','\n',  0, 'A', 'S',
-/*20*/'D','F','G','H','J','K','L',':','"', '~',  0, '|','Z','X', 'C', 'V',
-/*30*/'B','N','M','<','>','?',  0, '*',  0, ' ',  0,   0,   0,   0,   0,  0,
-/*40*/ 0,  0,  0,  0,  0,  0,  0, '7','8','9','-','4','5','6','+','1',
-/*50*/'2','3','0','.', 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*60*/ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*70*/ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-};
+/* ── Scancode set 1 → ASCII: shared with keyboard.c / virtio_input.c ─────── */
 
 /* Decode one synthetic keystroke; return ASCII or -1 (modifier / release). */
 static int hv_decode_keystroke(uint16_t make, uint32_t info) {
@@ -610,14 +591,9 @@ static int hv_decode_keystroke(uint16_t make, uint32_t info) {
     if (make == 0x2A || make == 0x36) { s_shift = !is_break; return -1; }  /* Shift */
     if (make == 0x3A) { if (!is_break) s_caps ^= 1; return -1; }           /* CapsLock */
     if (is_break) return -1;                                               /* releases */
-    if (make >= 128) return -1;
 
-    char c = s_shift ? sc_upper[make] : sc_lower[make];
+    char c = scancode1_to_ascii((uint8_t)make, s_shift, s_caps);
     if (!c) return -1;
-    if (s_caps) {
-        if (c >= 'a' && c <= 'z') c = (char)(c - 32);
-        else if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
-    }
     return (int)(unsigned char)c;
 }
 

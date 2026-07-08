@@ -90,6 +90,7 @@ OBJ_FONT      := $(BUILD)/font.o
 OBJ_FONT_TTF  := $(BUILD)/jetbrains_mono.o
 OBJ_SERIAL    := $(BUILD)/serial.o
 OBJ_KEYBOARD  := $(BUILD)/keyboard.o
+OBJ_SCANCODE  := $(BUILD)/scancode.o
 OBJ_TERMINAL  := $(BUILD)/terminal.o
 OBJ_SHELL     := $(BUILD)/shell.o
 OBJ_RAYTRACE  := $(BUILD)/raytrace.o
@@ -134,7 +135,7 @@ SAMPLE_OBJS  := $(patsubst %,$(BUILD)/sample_piano_%.o,$(SAMPLE_NAMES))
 OBJS := \
     $(OBJ_MAIN) $(OBJ_ALLOC) \
     $(OBJ_FONT) $(OBJ_FONT_TTF) \
-    $(OBJ_SERIAL) $(OBJ_KEYBOARD) $(OBJ_MOUSE) $(OBJ_VIRTIO_INPUT) $(OBJ_SAM) $(OBJ_TERMINAL) \
+    $(OBJ_SERIAL) $(OBJ_KEYBOARD) $(OBJ_SCANCODE) $(OBJ_MOUSE) $(OBJ_VIRTIO_INPUT) $(OBJ_SAM) $(OBJ_TERMINAL) \
     $(OBJ_SHELL) $(OBJ_RAYTRACE) $(OBJ_PIANO) \
     $(OBJ_SMP) $(OBJ_PCI) $(OBJ_VM) \
     $(OBJ_NET) $(OBJ_E1000) $(OBJ_E1000E) \
@@ -167,6 +168,9 @@ $(OBJ_SERIAL):   drivers/serial.c   | $(BUILD)
 	$(CC) $(KFLAGS) -c $< -o $@
 
 $(OBJ_KEYBOARD): drivers/keyboard.c | $(BUILD)
+	$(CC) $(KFLAGS) -c $< -o $@
+
+$(OBJ_SCANCODE): drivers/scancode.c | $(BUILD)
 	$(CC) $(KFLAGS) -c $< -o $@
 
 $(OBJ_TERMINAL): drivers/terminal.c | $(BUILD)
