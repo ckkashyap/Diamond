@@ -30,3 +30,13 @@ int hv_present(void);
  * Returns an ASCII byte (0..255) or -1 if nothing is available.
  */
 int hv_kbd_getchar(void);
+
+/*
+ * Busy-delay for `ms` milliseconds using the Hyper-V partition reference
+ * counter (exact, 100 ns resolution).  Returns 0 if the delay was performed,
+ * or -1 if no Hyper-V reference time source is available (the caller should
+ * then fall back to its own timing).  Safe to call unconditionally: off
+ * Hyper-V it simply returns -1.  Needed because a Gen 2 guest has no working
+ * 8254 PIT, so PIT-based delay loops would spin forever.
+ */
+int hv_delay_ms(uint32_t ms);

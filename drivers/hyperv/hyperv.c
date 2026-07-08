@@ -96,6 +96,7 @@ static inline void wrmsr(uint32_t msr, uint64_t val) {
 #define HV_MSR_GUEST_OS_ID   0x40000000u
 #define HV_MSR_HYPERCALL     0x40000001u
 #define HV_MSR_VP_INDEX      0x40000002u
+#define HV_MSR_TIME_REF_COUNT 0x40000020u   /* partition reference counter (100ns) */
 #define HV_MSR_SCONTROL      0x40000080u
 #define HV_MSR_SIEFP         0x40000082u
 #define HV_MSR_SIMP          0x40000083u
@@ -203,6 +204,7 @@ static uint8_t g_rxbuf[256];
 static uint64_t s_hhdm, s_kphys, s_kvirt;
 static void    *s_hcall_pg;              /* VA of hypercall page (call target) */
 static int      s_present;               /* running under Hyper-V              */
+static int      s_time_ref_ok;           /* partition reference counter usable */
 static uint32_t s_vp_index;
 static uint32_t s_negotiated_ver;
 static uint32_t s_msg_conn_id;           /* connection id for channel messages */
@@ -622,6 +624,19 @@ static int hv_decode_keystroke(uint16_t make, uint32_t info) {
 /* ── Public API ───────────────────────────────────────────────────────────── */
 int hv_present(void) { return s_present; }
 
+/* Busy-delay for `ms` milliseconds using the Hyper-V partition reference
+ * counter (HV_MSR_TIME_REF_COUNT, 100 ns units, monotonic).  Returns 0 if the
+ * delay was performed, or -1 if no Hyper-V reference time source is available
+ * (the caller should then use its own fallback).  This exists because a Gen 2
+ * guest has no functioning 8254 PIT, so PIT-based delay loops hang forever. */
+int hv_delay_ms(uint32_t ms) {
+    if (!s_time_ref_ok) return -1;
+    uint64_t start  = rdmsr(HV_MSR_TIME_REF_COUNT);
+    uint64_t target = start + (uint64_t)ms * 10000ull;   /* 1 ms = 10000 * 100ns */
+    while (rdmsr(HV_MSR_TIME_REF_COUNT) < target) cpu_pause();
+    return 0;
+}
+
 int hv_kbd_getchar(void) {
     if (!s_kbd_ready) return -1;
     for (;;) {
@@ -652,6 +667,7 @@ void hv_init(uint64_t hhdm_offset, uint64_t kphys, uint64_t kvirt) {
         D("[hv] not running under Hyper-V\n");
         return;
     }
+    uint32_t max_leaf = a;
     cpuid(0x40000001, &a, &b, &c, &d);
     if (a != 0x31237648) {  /* "Hv#1" — hypercall interface */
         D("[hv] Hv#1 interface absent\n");
@@ -659,6 +675,17 @@ void hv_init(uint64_t hhdm_offset, uint64_t kphys, uint64_t kvirt) {
     }
     s_present = 1;
     D("[hv] Hyper-V detected\n");
+
+    /* Partition privilege flags (leaf 0x40000003, EAX): bit 1 =
+     * AccessPartitionReferenceCounter.  Only then is HV_MSR_TIME_REF_COUNT a
+     * valid MSR (reading a non-existent MSR would #GP -> triple fault).  This
+     * gives us a reliable time base for delays even though the 8254 PIT is not
+     * a functioning counter on a Gen 2 guest. */
+    if (max_leaf >= 0x40000003u) {
+        cpuid(0x40000003, &a, &b, &c, &d);
+        s_time_ref_ok = (a & (1u << 1)) ? 1 : 0;
+    }
+    Dx("[hv] time_ref_ok=", (uint64_t)s_time_ref_ok);
 
     /* 2. Guest OS id (nonzero), then enable the hypercall page (must be RX). */
     wrmsr(HV_MSR_GUEST_OS_ID, HV_GUEST_OS_ID);
