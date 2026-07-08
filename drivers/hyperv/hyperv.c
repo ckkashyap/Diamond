@@ -399,14 +399,17 @@ static int ring_recv(struct ring *r, uint8_t *out, uint32_t outcap, uint32_t *ou
 /* ── VMBus bring-up ───────────────────────────────────────────────────────── */
 
 /* Record a keyboard offer if this OFFERCHANNEL matches the synth-kbd GUID.
- * offer_channel layout: header(8) offer(180) child_relid(4) monitorid(1)
- * flags(1) is_dedicated(2) connection_id(4).  offer.if_type is at offset 8. */
+ * offer_channel layout: header(8) offer(176) child_relid(4) monitorid(1)
+ * monitor_allocated(1) is_dedicated(2) connection_id(4).  if_type is at
+ * offset 8 (start of offer).  sizeof(struct vmbus_channel_offer) is 176
+ * (sub_channel_index/reserved3 are u16), so child_relid is at 8+176=184 and
+ * connection_id at 184+4+1+1+2=192 (verified against include/linux/hyperv.h). */
 static void hv_note_offer(const uint8_t *m) {
     const uint8_t *if_type = m + 8;
     if (!hv_memeq(if_type, HV_KBD_GUID, 16)) return;
     if (s_kbd_found) return;
-    s_kbd_relid   = get_u32(m + 188);
-    s_kbd_conn_id = get_u32(m + 196);
+    s_kbd_relid   = get_u32(m + 184);
+    s_kbd_conn_id = get_u32(m + 192);
     s_kbd_found   = 1;
     Dx("[hv] keyboard offer child_relid=", s_kbd_relid);
     Dx("[hv] keyboard offer connection_id=", s_kbd_conn_id);
