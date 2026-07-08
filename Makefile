@@ -338,10 +338,13 @@ iso: $(KERNEL_ELF)
 	$(LIMINE_DIR)/limine bios-install $(ISO)
 	@echo "ISO ready: $(ISO)"
 
-# ── VHDX for Hyper-V (Gen 2 / UEFI) ───────────────────────────────────────────
-# Hyper-V Gen 2 firmware won't boot a hybrid CD ISO and PXE-falls-through, so we
-# build a real GPT disk with a FAT32 EFI System Partition and wrap it as VHDX.
-# Boot: New Gen 2 VM, disable Secure Boot, attach diamond.vhdx as the hard disk.
+# ── VHDX for Hyper-V (Gen 1 BIOS + Gen 2 UEFI) ────────────────────────────────
+# Hyper-V Gen 2 firmware won't boot a hybrid CD ISO, so we build a real GPT disk
+# with a FAT32 EFI System Partition and wrap it as VHDX. We ALSO run
+# `limine bios-install` on the disk so the same image boots on a Gen 1 (legacy
+# BIOS) VM — where the emulated PS/2 keyboard works directly in the VM window.
+#   Gen 2: New Gen 2 VM, Secure Boot OFF, attach diamond.vhdx (keyboard via COM1).
+#   Gen 1: New Gen 1 VM, attach diamond.vhdx (native PS/2 keyboard in the window).
 VHDX     := diamond.vhdx
 ESP_MB   := 96
 ESP_IMG  := $(BUILD)/esp.img
@@ -352,7 +355,8 @@ vhdx: $(KERNEL_ELF)
 	rm -f $(ESP_IMG) $(DISK_IMG) $(VHDX)
 	mformat -i $(ESP_IMG) -C -T $$(($(ESP_MB)*2048)) -F -v DIAMOND ::
 	mmd   -i $(ESP_IMG) ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine
-	mcopy -i $(ESP_IMG) $(LIMINE_DIR)/BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
+	mcopy -i $(ESP_IMG) $(LIMINE_DIR)/BOOTX64.EFI     ::/EFI/BOOT/BOOTX64.EFI
+	mcopy -i $(ESP_IMG) $(LIMINE_DIR)/limine-bios.sys ::/boot/limine/limine-bios.sys
 	mcopy -i $(ESP_IMG) $(KERNEL_ELF)             ::/kernel.elf
 	mcopy -i $(ESP_IMG) boot/limine.conf          ::/boot/limine/limine.conf
 	mcopy -i $(ESP_IMG) boot/limine.conf          ::/EFI/BOOT/limine.conf
@@ -361,8 +365,9 @@ vhdx: $(KERNEL_ELF)
 	dd if=/dev/zero of=$(DISK_IMG) bs=1M count=$$(($(ESP_MB)+2)) status=none
 	sgdisk -a 2048 -n 1:2048:+$(ESP_MB)M -t 1:EF00 -c 1:"EFI System" $(DISK_IMG) >/dev/null
 	dd if=$(ESP_IMG) of=$(DISK_IMG) bs=512 seek=2048 conv=notrunc status=none
+	$(LIMINE_DIR)/limine bios-install $(DISK_IMG)
 	qemu-img convert -f raw -O vhdx -o subformat=dynamic $(DISK_IMG) $(VHDX)
-	@echo "VHDX ready: $(VHDX)  — attach to a Gen 2 VM with Secure Boot OFF"
+	@echo "VHDX ready: $(VHDX)  — Gen 2 (Secure Boot OFF) or Gen 1 (native PS/2 keyboard)"
 
 # Smoke-test the VHDX in QEMU over OVMF (same UEFI-from-disk path Hyper-V uses)
 run-vhdx: vhdx
