@@ -34,13 +34,20 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$SourceVhdx = (Join-Path (Split-Path -Parent $PSScriptRoot) 'diamond.vhdx'),
+    [string]$SourceVhdx,
     [string]$VMName     = 'Diamond',
     [int]   $MemoryMB   = 1024,
     [int]   $CPUs       = 2
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Default the VHDX to diamond.vhdx in the repo root (parent of this scripts\ folder).
+# Computed here rather than as a param default: with [CmdletBinding()], param default
+# expressions are evaluated before $PSScriptRoot is bound, so it would be empty.
+if (-not $SourceVhdx) {
+    $SourceVhdx = Join-Path (Split-Path -Parent $PSScriptRoot) 'diamond.vhdx'
+}
 
 # --- self-elevate ------------------------------------------------------------
 $id = [Security.Principal.WindowsIdentity]::GetCurrent()
