@@ -15,6 +15,7 @@
 #include "../arch/x86/pci.h"
 #include "../arch/x86/io.h"
 #include "virtio_input.h"
+#include "scancode.h"
 
 /* ── VirtIO PCI legacy register offsets (I/O port based) ────────────────── */
 #define VIRTIO_DEV_FEATURES   0x00u
@@ -155,27 +156,6 @@ static int32_t  s_abs_y        = 0;
 static uint8_t  s_btns         = 0;
 static int      s_mouse_ready  = 0;
 
-/* ── ASCII lookup table ──────────────────────────────────────────────────── */
-static const char kc_lower[128] = {
-/*00*/  0,  27,'1','2','3','4','5','6','7','8','9','0','-','=',  8,'\t',
-/*10*/ 'q','w','e','r','t','y','u','i','o','p','[',']','\n',  0,'a','s',
-/*20*/ 'd','f','g','h','j','k','l',';','\'','`',  0,'\\','z','x','c','v',
-/*30*/ 'b','n','m',',','.','/',  0,'*',  0,' ',  0,  0,  0,  0,  0,  0,
-/*40*/  0,  0,  0,  0,  0,  0,  0,'7','8','9','-','4','5','6','+','1',
-/*50*/ '2','3','0','.',  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*60*/  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*70*/  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-};
-static const char kc_upper[128] = {
-/*00*/  0,  27,'!','@','#','$','%','^','&','*','(',')','_','+',  8,'\t',
-/*10*/ 'Q','W','E','R','T','Y','U','I','O','P','{','}','\n',  0,'A','S',
-/*20*/ 'D','F','G','H','J','K','L',':','"','~',  0,'|','Z','X','C','V',
-/*30*/ 'B','N','M','<','>','?',  0,'*',  0,' ',  0,  0,  0,  0,  0,  0,
-/*40*/  0,  0,  0,  0,  0,  0,  0,'7','8','9','-','4','5','6','+','1',
-/*50*/ '2','3','0','.',  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*60*/  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/*70*/  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-};
 static int s_kb_shift = 0;
 static int s_kb_caps  = 0;
 
@@ -663,10 +643,7 @@ static void drain_keyboard(void) {
             if (kc == 57) s_vi_space = 1;
 
             if (kc < 128) {
-                char base = kc_lower[kc];
-                int use_shift = s_kb_shift;
-                if (base >= 'a' && base <= 'z') use_shift = s_kb_shift ^ s_kb_caps;
-                char c = use_shift ? kc_upper[kc] : kc_lower[kc];
+                char c = scancode1_to_ascii((uint8_t)kc, s_kb_shift, s_kb_caps);
                 if (c) {
                     int nw = (s_key_w + 1) % KEY_BUF;
                     if (nw != s_key_r) {

@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include "../../arch/x86/io.h"
+#include "../hyperv/hyperv.h"
 #include "aud_drv.h"
 
 /* PIT ports */
@@ -49,17 +50,31 @@ static uint16_t pit0_read(void) {
     return (uint16_t)((uint16_t)hi << 8) | lo;
 }
 
-/* Delay for ms milliseconds using the PIT channel 0 counter.
- * PIT runs at 1,193,182 Hz → 1193 ticks per millisecond.
- * Unsigned subtraction handles the 16-bit wraparound correctly. */
+/* Delay for ms milliseconds.
+ *
+ * Preferred source is the Hyper-V partition reference counter (exact, and the
+ * 8254 PIT is NOT a functioning counter on a Gen 2 guest — a PIT delay loop
+ * there would spin forever).  Off Hyper-V we fall back to PIT channel 0, which
+ * runs at 1,193,182 Hz → 1193 ticks per millisecond.  The fallback is bounded:
+ * if the counter never advances (absent/frozen PIT on some platform) we give
+ * up rather than hang, so `beep` always returns. */
 static void delay_ms(uint32_t ms) {
+    if (hv_delay_ms(ms) == 0) return;      /* reliable Hyper-V time source */
+
     uint32_t ticks_needed = ms * 1193u;
     uint16_t prev = pit0_read();
     uint32_t accumulated = 0;
+    uint32_t stuck = 0;                     /* consecutive non-advancing reads */
     while (accumulated < ticks_needed) {
         uint16_t cur = pit0_read();
-        accumulated += (uint16_t)(prev - cur);
+        uint16_t delta = (uint16_t)(prev - cur);  /* unsigned wrap-safe */
         prev = cur;
+        if (delta == 0) {
+            if (++stuck > 1000000u) return;       /* PIT not counting → bail  */
+        } else {
+            stuck = 0;
+            accumulated += delta;
+        }
         __asm__ volatile ("pause");
     }
 }

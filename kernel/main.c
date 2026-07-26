@@ -21,6 +21,7 @@
 #include "../drivers/audio/audio.h"
 #include "../drivers/virtio_input.h"
 #include "../drivers/sam/sam.h"
+#include "../drivers/hyperv/hyperv.h"
 #include "../apps/shell/shell.h"
 #include "alloc.h"
 
@@ -196,6 +197,11 @@ void kmain(void) {
             video_width(), video_height()
         );
         sam_init(hhdm_req.response->offset);
+        hv_init(
+            hhdm_req.response->offset,
+            kaddr_req.response->physical_base,
+            kaddr_req.response->virtual_base
+        );
     }
 
     shell_run();
